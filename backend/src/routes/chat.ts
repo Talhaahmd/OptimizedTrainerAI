@@ -75,9 +75,18 @@ export default async function chatRoutes(fastify: FastifyInstance) {
                     await fastify.supabaseAdmin.from('daily_stats').upsert({ user_id: request.user_id, date_key: dateKey, weight_kg: args.weight_kg }, { onConflict: 'user_id,date_key' });
                     // Also update profile
                     await fastify.supabaseAdmin.from('profiles').update({ weight_kg: args.weight_kg }).eq('user_id', request.user_id);
-                } else if (name === 'log_meal_text') {
-                    // For text meals, we create a draft
-                    await fastify.supabaseAdmin.from('meals').insert({ user_id: request.user_id, date_key: dateKey, status: 'draft', source: 'chat' });
+                } else if (name === 'log_meal_items') {
+                    // Create a confirmed meal
+                    const { data: meal, error: mError } = await fastify.supabaseAdmin
+                        .from('meals')
+                        .insert({ user_id: request.user_id, date_key: dateKey, status: 'confirmed', source: 'chat' })
+                        .select()
+                        .single();
+
+                    if (meal && !mError) {
+                        const items = args.items.map((item: any) => ({ ...item, meal_id: meal.id }));
+                        await fastify.supabaseAdmin.from('meal_items').insert(items);
+                    }
                 }
 
                 toolResults.push({ tool: name, args });

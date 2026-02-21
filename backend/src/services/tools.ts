@@ -49,15 +49,29 @@ export const TOOLS: ChatCompletionTool[] = [
     {
         type: 'function',
         function: {
-            name: 'log_meal_text',
-            description: 'Log a meal based on text description.',
+            name: 'log_meal_items',
+            description: 'Log a meal with its nutritional items. Use this when the user describes what they ate.',
             parameters: {
                 type: 'object',
                 properties: {
-                    description: { type: 'string' },
-                    date: { type: 'string', description: 'YYYY-MM-DD format.' }
+                    items: {
+                        type: 'array',
+                        items: {
+                            type: 'object',
+                            properties: {
+                                name: { type: 'string' },
+                                portion: { type: 'string' },
+                                calories: { type: 'number' },
+                                protein_g: { type: 'number' },
+                                carbs_g: { type: 'number' },
+                                fat_g: { type: 'number' }
+                            },
+                            required: ['name', 'portion', 'calories', 'protein_g', 'carbs_g', 'fat_g']
+                        }
+                    },
+                    date: { type: 'string', description: 'YYYY-MM-DD format. Defaults to today.' }
                 },
-                required: ['description']
+                required: ['items']
             }
         }
     },

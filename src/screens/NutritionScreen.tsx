@@ -3,19 +3,17 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Platform }
 import { Theme } from '../constants/Theme';
 import { useAppContext } from '../context/AppContext';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ChevronLeft, Camera } from 'lucide-react-native';
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { ChevronLeft } from 'lucide-react-native';
 import { BackButton } from '../components/BackButton';
 import { CaloriesCard } from '../components/CaloriesCard';
 import { MacroCard } from '../components/MacroCard';
 import { FoodLogTable } from '../components/FoodLogTable';
 import { NutritionReviewCard } from '../components/NutritionReviewCard';
+import { useNavigation } from '@react-navigation/native';
 
 export default function NutritionScreen() {
-    const { todayKey, meals, addMeal, targets } = useAppContext();
-    const [showCamera, setShowCamera] = useState(false);
-    const [permission, requestPermission] = useCameraPermissions();
-    const [cameraRef, setCameraRef] = useState<any>(null);
+    const { todayKey, meals, targets } = useAppContext();
+    const navigation = useNavigation<any>();
 
     const todayMeals = meals[todayKey] || [];
     const eatenCalories = todayMeals.reduce((sum, m) => sum + m.calories, 0);
@@ -34,39 +32,6 @@ export default function NutritionScreen() {
         fat: targets?.fat || 70,
     };
 
-    const handleTakePhoto = async () => {
-        if (cameraRef) {
-            const photo = await cameraRef.takePictureAsync();
-            setShowCamera(false);
-
-            // Mocked food data for the new table structure
-            const foodItems = ['Grilled Chicken Salad', 'Avocado Toast', 'Protein Shake', 'Salmon & Rice'];
-            const randomFood = foodItems[Math.floor(Math.random() * foodItems.length)];
-
-            const estimatedCalories = Math.floor(Math.random() * 500) + 200;
-            const protein = Math.floor(estimatedCalories / 10);
-            const carbs = Math.floor(estimatedCalories / 20);
-            const fat = Math.floor(estimatedCalories / 40);
-
-            await addMeal({
-                photoUri: photo.uri,
-                foodName: randomFood,
-                calories: estimatedCalories,
-                protein,
-                carbs,
-                fat
-            });
-        }
-    };
-
-    const openCamera = async () => {
-        if (!permission?.granted) {
-            const { granted } = await requestPermission();
-            if (!granted) return;
-        }
-        setShowCamera(true);
-    };
-
     return (
         <SafeAreaView style={styles.container}>
             <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -79,8 +44,11 @@ export default function NutritionScreen() {
 
                 {/* SECTION 1 — PRIMARY ACTION BUTTON */}
                 <View style={styles.section}>
-                    <TouchableOpacity style={styles.logBtn} onPress={openCamera}>
-                        <Text style={styles.logBtnText}>Log my meal</Text>
+                    <TouchableOpacity
+                        style={styles.logBtn}
+                        onPress={() => navigation.navigate('Optimize')}
+                    >
+                        <Text style={styles.logBtnText}>Log my meal via AI Chat</Text>
                     </TouchableOpacity>
                 </View>
 
@@ -103,7 +71,7 @@ export default function NutritionScreen() {
                 <View style={styles.section}>
                     <NutritionReviewCard
                         score={78}
-                        summary="You are currently under your protein target and slightly below your calorie goal. Increasing lean protein intake will help preserve muscle while maintaining fat loss."
+                        summary="You are currently under your protein target and slightly below your calorie goal. I'll help you optimize your next meal in the chat."
                         findings={[
                             "Protein intake below target",
                             "Calories within optimal range",
@@ -111,8 +79,8 @@ export default function NutritionScreen() {
                             "Carbohydrates slightly low"
                         ]}
                         recommendations={[
+                            "Ask me for a high-protein recipe in chat",
                             "Add 40g protein to your next meal",
-                            "Eat one high protein snack",
                             "Maintain calorie intake within 2400 kcal",
                             "Avoid increasing fat intake further today"
                         ]}
@@ -120,23 +88,6 @@ export default function NutritionScreen() {
                     />
                 </View>
             </ScrollView>
-
-            {/* Camera Modal */}
-            <Modal visible={showCamera} animationType="slide">
-                <CameraView
-                    style={styles.camera}
-                    ref={(ref) => setCameraRef(ref)}
-                >
-                    <SafeAreaView style={styles.cameraOverlay}>
-                        <TouchableOpacity onPress={() => setShowCamera(false)} style={styles.closeBtn}>
-                            <ChevronLeft size={32} color="#FFF" />
-                        </TouchableOpacity>
-                        <TouchableOpacity onPress={handleTakePhoto} style={styles.captureBtn}>
-                            <View style={styles.captureInner} />
-                        </TouchableOpacity>
-                    </SafeAreaView>
-                </CameraView>
-            </Modal>
         </SafeAreaView>
     );
 }
@@ -182,36 +133,5 @@ const styles = StyleSheet.create({
         fontWeight: '700',
         textTransform: 'uppercase',
         letterSpacing: 1,
-    },
-    camera: {
-        flex: 1,
-    },
-    cameraOverlay: {
-        flex: 1,
-        justifyContent: 'space-between',
-        padding: 24,
-    },
-    closeBtn: {
-        width: 48,
-        height: 48,
-        borderRadius: 24,
-        backgroundColor: 'rgba(0,0,0,0.5)',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    captureBtn: {
-        width: 84,
-        height: 84,
-        borderRadius: 42,
-        backgroundColor: '#FFF',
-        alignSelf: 'center',
-        padding: 6,
-        marginBottom: 40,
-    },
-    captureInner: {
-        flex: 1,
-        borderRadius: 38,
-        borderWidth: 2,
-        borderColor: '#000',
     },
 });

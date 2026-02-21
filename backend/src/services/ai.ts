@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { SYSTEM_PROMPT, MEAL_VISION_PROMPT } from './prompts';
+import { SYSTEM_PROMPT } from './prompts';
 import { TOOLS } from './tools';
 import dotenv from 'dotenv';
 
@@ -23,22 +23,4 @@ export const aiService = {
 
         return response.choices[0].message;
     },
-
-    async analyzeMealPhoto(photoUrl: string) {
-        const response = await openai.chat.completions.create({
-            model: 'gpt-4o',
-            messages: [
-                {
-                    role: 'user',
-                    content: [
-                        { type: 'text', text: MEAL_VISION_PROMPT },
-                        { type: 'image_url', image_url: { url: photoUrl } },
-                    ],
-                },
-            ],
-            response_format: { type: 'json_object' },
-        });
-
-        return JSON.parse(response.choices[0].message.content || '{}');
-    }
 };
