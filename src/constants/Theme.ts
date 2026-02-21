@@ -17,11 +17,21 @@ export const Theme = {
     cardPadding: 20,
     gridGap: 16,
     gridGapSmall: 12,
+    sm: 8,
+    md: 16,
+    lg: 24,
+    xl: 32,
   },
   borderRadius: {
     card: 18,
     tile: 14,
     pill: 999,
+    sm: 8,
+    md: 12,
+    lg: 16,
+  },
+  fontSize: {
+    input: 16,
   },
   shadow: {
     shadowColor: '#000',

@@ -144,6 +144,7 @@ const styles = StyleSheet.create({
         backgroundColor: Theme.colors.card,
         borderRadius: Theme.borderRadius.md,
         color: Theme.colors.text,
+        fontSize: Theme.fontSize.input,
         padding: 16,
         borderWidth: 1,
         borderColor: Theme.colors.border,
