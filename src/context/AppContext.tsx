@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { User, UserProfile, AppData, DailyStats, Meal, Message, TargetedStats } from '../types';
+import { User, UserProfile, DailyStats, Meal, Message, TargetedStats } from '../types';
 import { Storage } from '../utils/Storage';
+import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 import { format } from 'date-fns';
 
 interface AppContextType {
@@ -24,159 +26,186 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const [data, setData] = useState<AppData | null>(null);
+    const [user, setUser] = useState<User | null>(null);
+    const [profile, setProfile] = useState<UserProfile | null>(null);
+    const [dailyStats, setDailyStats] = useState<Record<string, DailyStats>>({});
+    const [meals, setMeals] = useState<Record<string, Meal[]>>({});
+    const [chats, setChats] = useState<Message[]>([]);
+    const [targets, setTargets] = useState<TargetedStats | null>(null);
     const [loading, setLoading] = useState(true);
     const todayKey = format(new Date(), 'yyyy-MM-dd');
 
     useEffect(() => {
-        loadData();
+        // Listen for auth changes
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+            if (session?.user) {
+                setUser({ id: session.user.id, email: session.user.email || '' });
+                await loadBackendData();
+            } else {
+                setUser(null);
+                setProfile(null);
+                setTargets(null);
+            }
+            setLoading(false);
+        });
+
+        return () => subscription.unsubscribe();
     }, []);
 
-    const loadData = async () => {
-        const storedData = await Storage.getData();
-        setData(storedData);
-        setLoading(false);
-    };
-
-    const login = async (email: string) => {
-        if (!data) return;
-        const user = data.users.find(u => u.email === email);
-        if (user) {
-            const newData = { ...data, session: { userId: user.id } };
-            setData(newData);
-            await Storage.saveData(newData);
+    const loadBackendData = async () => {
+        try {
+            const data = await api.get('/me');
+            if (data.profile) {
+                setProfile({
+                    fullName: data.profile.full_name || '',
+                    age: data.profile.age?.toString() || '',
+                    gender: data.profile.gender || 'M',
+                    goal: data.profile.goal === 'muscle' ? 'Muscle Develop' : 'Fatloss',
+                    heightCm: data.profile.height_cm?.toString() || '',
+                    weightKg: data.profile.weight_kg?.toString() || '',
+                    goalWeightKg: '', // Backend doesn't store this yet
+                });
+            }
+            if (data.targets) {
+                setTargets({
+                    calories: data.targets.calories_target,
+                    protein: data.targets.protein_g_target,
+                    carbs: data.targets.carbs_g_target,
+                    fat: data.targets.fat_g_target,
+                    steps: data.targets.steps_target,
+                    sleep: data.targets.sleep_target_hours,
+                });
+            }
+            if (data.todaySummary) {
+                setDailyStats({ [todayKey]: { steps: data.todaySummary.steps, sleepHours: data.todaySummary.sleep_hours } });
+            }
+        } catch (err) {
+            console.error('Failed to load backend data', err);
         }
     };
 
+    const login = async (email: string) => {
+        // For simplicity in this demo, we'll assume a password or use OTP
+        // Real implementation would need a password field or magic link
+        const { error } = await supabase.auth.signInWithOtp({ email });
+        if (error) throw error;
+    };
+
     const signUp = async (email: string) => {
-        if (!data) return;
-        const newUser: User = { id: Math.random().toString(36).substr(2, 9), email };
-        const newData: AppData = {
-            ...data,
-            users: [...data.users, newUser],
-            session: { userId: newUser.id },
-        };
-        setData(newData);
-        await Storage.saveData(newData);
+        const { error } = await supabase.auth.signUp({ email, password: 'temporary-password' });
+        if (error) throw error;
     };
 
     const logout = async () => {
-        if (!data) return;
-        const newData = { ...data, session: null };
-        setData(newData);
-        await Storage.saveData(newData);
+        await supabase.auth.signOut();
     };
 
-    const updateProfile = async (profile: UserProfile) => {
-        if (!data) return;
-        const newData = { ...data, profile };
-        setData(newData);
-        await Storage.saveData(newData);
+    const updateProfile = async (newProfile: UserProfile) => {
+        setProfile(newProfile);
+        try {
+            const result = await api.post('/profile', {
+                full_name: newProfile.fullName,
+                age: parseInt(newProfile.age),
+                gender: newProfile.gender,
+                goal: newProfile.goal === 'Muscle Develop' ? 'muscle' : 'fatloss',
+                height_cm: parseInt(newProfile.heightCm),
+                weight_kg: parseFloat(newProfile.weightKg),
+            });
+            if (result.targets) {
+                setTargets({
+                    calories: result.targets.calories_target,
+                    protein: result.targets.protein_g_target,
+                    carbs: result.targets.carbs_g_target,
+                    fat: result.targets.fat_g_target,
+                    steps: result.targets.steps_target,
+                    sleep: result.targets.sleep_target_hours,
+                });
+            }
+        } catch (err) {
+            console.error('Profile update failed', err);
+        }
     };
 
     const updateDailyStats = async (stats: Partial<DailyStats>) => {
-        if (!data) return;
-        const currentStats = data.dailyStats[todayKey] || { steps: 0, sleepHours: 0 };
-        const newData = {
-            ...data,
-            dailyStats: {
-                ...data.dailyStats,
-                [todayKey]: { ...currentStats, ...stats },
-            },
-        };
-        setData(newData);
-        await Storage.saveData(newData);
+        const current = dailyStats[todayKey] || { steps: 0, sleepHours: 0 };
+        const updated = { ...current, ...stats };
+        setDailyStats({ ...dailyStats, [todayKey]: updated });
+
+        try {
+            if (stats.steps !== undefined) await api.post('/stats/steps', { steps: stats.steps });
+            if (stats.sleepHours !== undefined) await api.post('/stats/sleep', { hours: stats.sleepHours });
+        } catch (err) {
+            console.error('Stats update failed', err);
+        }
     };
 
     const addMeal = async (mealData: Omit<Meal, 'id' | 'createdAt'>) => {
-        if (!data) return;
+        // Keep local for now, but in a real app, this would hit the backend
         const newMeal: Meal = {
             ...mealData,
             id: Math.random().toString(36).substr(2, 9),
             createdAt: new Date().toISOString(),
         };
-        const currentMeals = data.meals[todayKey] || [];
-        const newData = {
-            ...data,
-            meals: {
-                ...data.meals,
-                [todayKey]: [...currentMeals, newMeal],
-            },
-        };
-        setData(newData);
-        await Storage.saveData(newData);
+        const currentMeals = meals[todayKey] || [];
+        setMeals({ ...meals, [todayKey]: [...currentMeals, newMeal] });
     };
 
     const addChatMessage = async (content: string, role: 'user' | 'assistant') => {
-        if (!data) return;
         const newMessage: Message = {
             id: Math.random().toString(36).substr(2, 9),
             content,
             role,
             timestamp: new Date().toISOString(),
         };
-        const newData = {
-            ...data,
-            chats: [...data.chats, newMessage],
-        };
-        setData(newData);
-        await Storage.saveData(newData);
-    };
+        setChats(prev => [...prev, newMessage]);
 
-    const calculateTargets = (profile: UserProfile | null): TargetedStats | null => {
-        if (!profile) return null;
-
-        const weight = parseFloat(profile.weightKg);
-        const height = parseFloat(profile.heightCm);
-        const age = parseInt(profile.age);
-
-        if (isNaN(weight) || isNaN(height) || isNaN(age)) return null;
-
-        // Mifflin St Jeor
-        let bmr = (10 * weight) + (6.25 * height) - (5 * age);
-        if (profile.gender === 'M') {
-            bmr += 5;
-        } else {
-            bmr -= 161;
+        if (role === 'user') {
+            try {
+                const response = await api.post('/chat/message', { message: content });
+                if (response.assistantText) {
+                    const aiMsg: Message = {
+                        id: Math.random().toString(36).substr(2, 9),
+                        content: response.assistantText,
+                        role: 'assistant',
+                        timestamp: new Date().toISOString(),
+                    };
+                    setChats(prev => [...prev, aiMsg]);
+                }
+                // Sync latest data returned by AI tool calls
+                if (response.todaySummary) {
+                    setDailyStats({ [todayKey]: { steps: response.todaySummary.steps, sleepHours: response.todaySummary.sleep_hours } });
+                }
+                if (response.targets) {
+                    setTargets({
+                        calories: response.targets.calories_target,
+                        protein: response.targets.protein_g_target,
+                        carbs: response.targets.carbs_g_target,
+                        fat: response.targets.fat_g_target,
+                        steps: response.targets.steps_target,
+                        sleep: response.targets.sleep_target_hours,
+                    });
+                }
+            } catch (err) {
+                console.error('Chat failed', err);
+                const errorMsg: Message = {
+                    id: 'err',
+                    content: "Sorry, I'm having trouble connecting to the brain center. Please check your connection.",
+                    role: 'assistant',
+                    timestamp: new Date().toISOString(),
+                };
+                setChats(prev => [...prev, errorMsg]);
+            }
         }
-
-        let calories = 0;
-        let protein = 0;
-        let steps = 0;
-
-        if (profile.goal === 'Muscle Develop') {
-            calories = Math.round(bmr * 1.3 + 300);
-            protein = Math.round(weight * 2.2);
-            steps = 8000;
-        } else {
-            calories = Math.round(bmr * 1.2 - 400);
-            protein = Math.round(weight * 2.0);
-            steps = 10000;
-        }
-
-        const fat = Math.round((calories * 0.25) / 9);
-        const carbs = Math.round((calories - (protein * 4) - (fat * 9)) / 4);
-
-        return {
-            calories,
-            protein,
-            carbs,
-            fat,
-            steps,
-            sleep: 8
-        };
     };
-
-    const targets = calculateTargets(data?.profile || null);
 
     return (
         <AppContext.Provider
             value={{
-                user: data?.session ? data.users.find(u => u.id === data.session?.userId) || null : null,
-                profile: data?.profile || null,
-                dailyStats: data?.dailyStats || {},
-                meals: data?.meals || {},
-                chats: data?.chats || [],
+                user,
+                profile,
+                dailyStats,
+                meals,
+                chats,
                 loading,
                 login,
                 signUp,
