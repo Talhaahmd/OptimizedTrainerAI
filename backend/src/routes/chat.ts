@@ -90,6 +90,14 @@ export default async function chatRoutes(fastify: FastifyInstance) {
                 }
 
                 toolResults.push({ tool: name, args });
+
+                // 5b. Log to AI Audit Trail
+                await fastify.supabaseAdmin.from('ai_audit_log').insert({
+                    user_id: request.user_id,
+                    event_type: `tool_call_${name}`,
+                    request_json: args,
+                    response_json: { status: 'executed' }
+                });
             }
         }
 
